@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DocTools - PDF Viewer</title>
+    <link rel="manifest" href="manifest.json">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <style>
+        /* Master Theme Variables */
+        :root { --bg-color: #121212; --panel-bg: #1e1e1e; --text-color: #e0e0e0; --border-color: #333; --toolbar-bg: #252526; --accent-blue: #3498db; --accent-hover: #2980b9; --canvas-filter: invert(1) hue-rotate(180deg); }
+        [data-theme="light"] { --bg-color: #e9ecef; --panel-bg: #ffffff; --text-color: #212529; --border-color: #dee2e6; --toolbar-bg: #f8f9fa; --canvas-filter: none; }
+        
+        /* Unified Structure */
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; background: var(--bg-color); color: var(--text-color); transition: 0.3s; overflow: hidden; }
+        .app-menu { background: var(--panel-bg); padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid var(--accent-blue); flex-shrink: 0; z-index: 50;}
+        .app-menu-brand { font-size: 1.2rem; font-weight: bold; color: var(--text-color); text-decoration: none; }
+        .app-menu-links { display: flex; gap: 10px; }
+        .app-menu-links a { color: var(--text-color); text-decoration: none; padding: 8px 14px; border-radius: 4px; font-weight: bold; transition: 0.2s; }
+        .app-menu-links a:hover { background: var(--toolbar-bg); }
+        .app-menu-links a.active { background: var(--accent-blue); color: #fff; }
+        .app-menu-actions { display: flex; gap: 10px; }
+        
+        /* Toolbar */
+        .toolbar-container { background: var(--toolbar-bg); padding: 10px 20px; display: flex; gap: 15px; align-items: center; border-bottom: 1px solid var(--border-color); flex-shrink: 0; flex-wrap: wrap; z-index: 40; }
+        .btn-primary { background: var(--accent-blue); color: #fff; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-secondary { background: var(--toolbar-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        .btn-secondary:hover { background: var(--border-color); }
+        .btn-file { background: #27ae60; color: #fff; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .tool-input { background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 8px; border-radius: 4px; text-align: center; width: 40px; font-weight: bold; }
+        
+        /* Content */
+        .content-area { flex: 1; overflow: auto; display: flex; justify-content: center; padding: 20px; position: relative; background: var(--bg-color); }
+        #pdf-container { position: relative; max-width: 100%; box-shadow: 0 4px 15px rgba(0,0,0,0.3); border-radius: 4px; }
+        canvas { display: block; filter: var(--canvas-filter); transition: filter 0.3s; }
+        
+        .fullscreen-mode .app-menu { display: none; }
+    </style>
+</head>
+<body>
+    <nav class="app-menu">
+        <a href="#" class="app-menu-brand">DocTools</a>
+        <div class="app-menu-links">
+            <a href="index.html">Word Reader</a>
+            <a href="img2pdf.html">Image to PDF</a>
+            <a href="pdfviewer.html" class="active">PDF Viewer</a>
+        </div>
+        <div class="app-menu-actions">
+            <button id="theme-toggle" class="btn-secondary">☀️ Light Mode</button>
+            <button id="fullscreen-toggle" class="btn-primary">⛶ Full Screen</button>
+        </div>
+    </nav>
+
+    <div class="toolbar-container">
+        <label class="btn-file">
+            📂 Open PDF
+            <input type="file" id="file-input" accept="application/pdf" style="display:none;">
+        </label>
+        <div style="display:flex; align-items:center; gap:5px; margin-left:10px;">
+            <button id="prev" class="btn-secondary">◀ Prev</button>
+            <span style="font-weight:bold; font-size:0.9rem;"> <input id="page-num" class="tool-input" type="number" min="1" value="1"> / <span id="page-count">0</span></span>
+            <button id="next" class="btn-secondary">Next ▶</button>
+        </div>
+        <div style="display:flex; align-items:center; gap:5px; margin-left:auto;">
+            <button id="zoom-out" class="btn-secondary">➖</button>
+            <span id="zoom-level" style="font-weight:bold; width: 45px; text-align:center;">100%</span>
+            <button id="zoom-in" class="btn-secondary">➕</button>
+            <button id="fit-to-width" class="btn-primary">Fit Width</button>
+        </div>
+    </div>
+    
+    <div class="content-area">
+        <div id="pdf-container"></div>
+    </div>
+
+    <script>
+        // Global UI Scripts
+        const themeToggle = document.getElementById('theme-toggle'), fullscreenToggle = document.getElementById('fullscreen-toggle');
+        function setTheme(theme) { document.documentElement.setAttribute('data-theme', theme); localStorage.setItem('theme', theme); themeToggle.textContent = theme === 'light' ? '🌙 Dark Mode' : '☀️ Light Mode'; }
+        setTheme(localStorage.getItem('theme') || 'dark');
+        themeToggle.addEventListener('click', () => setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'));
+        
+        fullscreenToggle.addEventListener('click', () => {
+            if (!document.fullscreenElement) { document.documentElement.requestFullscreen(); fullscreenToggle.textContent = "⛶ Exit Full Screen"; document.body.classList.add('fullscreen-mode'); }
+            else { document.exitFullscreen(); fullscreenToggle.textContent = "⛶ Full Screen"; document.body.classList.remove('fullscreen-mode'); }
+            setTimeout(() => { if(pdfDoc) queueRenderPage(pageNum); }, 200); // Rerender after animation
+        });
+
+        // App Logic
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+        let pdfDoc = null, pageNum = 1, pageRendering = false, pageNumPending = null, scale = 1.0;
+        const container = document.getElementById('pdf-container'), pageNumInput = document.getElementById('page-num'), zoomLevel = document.getElementById('zoom-level');
+
+        function renderPage(num) {
+            pageRendering = true; container.innerHTML = '';
+            const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d');
+            container.appendChild(canvas);
+            pdfDoc.getPage(num).then(page => {
+                const viewport = page.getViewport({ scale });
+                canvas.height = viewport.height; canvas.width = viewport.width;
+                page.render({ canvasContext: ctx, viewport: viewport }).promise.then(() => {
+                    pageRendering = false;
+                    if (pageNumPending !== null) { renderPage(pageNumPending); pageNumPending = null; }
+                });
+            });
+            pageNumInput.value = num; document.querySelector('.content-area').scrollTop = 0;
+        }
+        
+        function queueRenderPage(num) { if (pageRendering) pageNumPending = num; else renderPage(num); }
+        document.getElementById('prev').addEventListener('click', () => { if (pageNum <= 1) return; pageNum--; queueRenderPage(pageNum); });
+        document.getElementById('next').addEventListener('click', () => { if (pageNum >= pdfDoc.numPages) return; pageNum++; queueRenderPage(pageNum); });
+        pageNumInput.addEventListener('change', () => { const v = parseInt(pageNumInput.value); if(v > 0 && v <= pdfDoc.numPages) { pageNum = v; queueRenderPage(v); } else pageNumInput.value = pageNum; });
+        
+        document.getElementById('zoom-in').addEventListener('click', () => { if(scale<3) { scale+=0.25; zoomLevel.textContent=Math.round(scale*100)+'%'; queueRenderPage(pageNum); } });
+        document.getElementById('zoom-out').addEventListener('click', () => { if(scale>0.5) { scale-=0.25; zoomLevel.textContent=Math.round(scale*100)+'%'; queueRenderPage(pageNum); } });
+        document.getElementById('fit-to-width').addEventListener('click', () => {
+            if(!pdfDoc) return;
+            pdfDoc.getPage(pageNum).then(page => { scale = (document.querySelector('.content-area').clientWidth - 40) / page.getViewport({ scale: 1.0 }).width; zoomLevel.textContent=Math.round(scale*100)+'%'; queueRenderPage(pageNum); });
+        });
+        window.addEventListener('resize', () => { if(pdfDoc) queueRenderPage(pageNum); });
+
+        document.getElementById('file-input').addEventListener('change', e => {
+            if (e.target.files[0] && e.target.files[0].type === 'application/pdf') {
+                const r = new FileReader();
+                r.onload = ev => {
+                    pdfjsLib.getDocument(new Uint8Array(ev.target.result)).promise.then(pdf => {
+                        pdfDoc = pdf; document.getElementById('page-count').textContent = pdf.numPages; pageNum = 1;
+                        pdf.getPage(1).then(page => { scale = (document.querySelector('.content-area').clientWidth - 40) / page.getViewport({ scale: 1.0 }).width; zoomLevel.textContent=Math.round(scale*100)+'%'; renderPage(1); });
+                    });
+                };
+                r.readAsArrayBuffer(e.target.files[0]);
+            }
+        });
+        // OS-level File Handling (Open With)
+        if ('launchQueue' in window) {
+            window.launchQueue.setConsumer(async (launchParams) => {
+                if (!launchParams.files.length) return;
+                const fileHandle = launchParams.files[0];
+                const file = await fileHandle.getFile();
+                
+                if (file.type === 'application/pdf') {
+                    const r = new FileReader();
+                    r.onload = ev => {
+                        pdfjsLib.getDocument(new Uint8Array(ev.target.result)).promise.then(pdf => {
+                            pdfDoc = pdf; 
+                            document.getElementById('page-count').textContent = pdf.numPages; 
+                            pageNum = 1;
+                            pdf.getPage(1).then(page => { 
+                                scale = (document.querySelector('.content-area').clientWidth - 40) / page.getViewport({ scale: 1.0 }).width; 
+                                document.getElementById('zoom-level').textContent = Math.round(scale*100) + '%'; 
+                                renderPage(1); 
+                            });
+                        });
+                    };
+                    r.readAsArrayBuffer(file);
+                }
+            });
+        }
+        if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+    </script>
+</body>
+</html>

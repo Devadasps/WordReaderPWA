@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DocTools - Image to PDF</title>
+    <link rel="manifest" href="manifest.json">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        /* Master Theme Variables */
+        :root { --bg-color: #121212; --panel-bg: #1e1e1e; --text-color: #e0e0e0; --border-color: #333; --toolbar-bg: #252526; --accent-blue: #3498db; --accent-hover: #2980b9; }
+        [data-theme="light"] { --bg-color: #e9ecef; --panel-bg: #ffffff; --text-color: #212529; --border-color: #dee2e6; --toolbar-bg: #f8f9fa; }
+        
+        /* Unified Structure */
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; background: var(--bg-color); color: var(--text-color); transition: 0.3s; overflow: hidden; }
+        .app-menu { background: var(--panel-bg); padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid var(--accent-blue); flex-shrink: 0; }
+        .app-menu-brand { font-size: 1.2rem; font-weight: bold; color: var(--text-color); text-decoration: none; }
+        .app-menu-links { display: flex; gap: 10px; }
+        .app-menu-links a { color: var(--text-color); text-decoration: none; padding: 8px 14px; border-radius: 4px; font-weight: bold; transition: 0.2s; }
+        .app-menu-links a:hover { background: var(--toolbar-bg); }
+        .app-menu-links a.active { background: var(--accent-blue); color: #fff; }
+        .app-menu-actions { display: flex; gap: 10px; }
+        .toolbar-container { background: var(--toolbar-bg); padding: 10px 20px; display: flex; gap: 10px; align-items: center; border-bottom: 1px solid var(--border-color); flex-shrink: 0; flex-wrap: wrap; }
+        .content-area { flex: 1; overflow: auto; padding: 20px; }
+        
+        /* Buttons & Inputs */
+        .btn-primary { background: var(--accent-blue); color: #fff; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-primary:disabled { background: var(--border-color); color: #888; cursor: not-allowed; }
+        .btn-secondary { background: var(--toolbar-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        .btn-secondary:hover { background: var(--border-color); }
+        .btn-file { background: #27ae60; color: #fff; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .btn-file:hover { background: #219653; }
+        .btn-danger { background: #e74c3c; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .btn-danger:hover { background: #c0392b; }
+        .tool-input { background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 8px; border-radius: 4px; font-size: 0.9rem; }
+        
+        /* Previews */
+        .preview-grid { display: flex; flex-wrap: wrap; gap: 15px; }
+        .img-container { position: relative; width: 180px; background: var(--panel-bg); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); }
+        .img-preview { width: 100%; height: 200px; object-fit: contain; border-radius: 4px; }
+        .img-number { position: absolute; top: 15px; left: 15px; background: rgba(0,0,0,0.8); color: white; border-radius: 50%; width: 24px; height: 24px; text-align: center; line-height: 24px; font-size: 12px; font-weight: bold; }
+        .img-delete { position: absolute; top: 15px; right: 15px; background: #e74c3c; color: white; border-radius: 50%; width: 24px; height: 24px; text-align: center; line-height: 24px; cursor: pointer; font-weight: bold; border: none; }
+    </style>
+</head>
+<body>
+    <nav class="app-menu">
+        <a href="#" class="app-menu-brand">DocTools</a>
+        <div class="app-menu-links">
+            <a href="index.html">Word Reader</a>
+            <a href="img2pdf.html" class="active">Image to PDF</a>
+            <a href="pdfviewer.html">PDF Viewer</a>
+        </div>
+        <div class="app-menu-actions">
+            <button id="theme-toggle" class="btn-secondary">☀️ Light Mode</button>
+            <button id="fullscreen-toggle" class="btn-primary">⛶ Full Screen</button>
+        </div>
+    </nav>
+
+    <div class="toolbar-container">
+        <label class="btn-file">
+            📂 Add Images
+            <input type="file" id="imageInput" accept="image/*" multiple style="display:none;">
+        </label>
+        <select id="orientation" class="tool-input"><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select>
+        <select id="pageSize" class="tool-input"><option value="a4">A4</option><option value="letter">Letter</option></select>
+        <input type="text" id="filename" class="tool-input" value="my_document.pdf" placeholder="Filename">
+        <button id="generateButton" class="btn-primary" disabled>💾 Generate PDF</button>
+        <button id="clearButton" class="btn-danger">🗑 Clear All</button>
+        <span id="statusMessage" style="margin-left:auto; font-weight:bold;"></span>
+    </div>
+
+    <div class="content-area">
+        <div class="preview-grid" id="previewArea">
+            <em style="color: var(--border-color); width:100%; text-align:center; margin-top:50px;">No images selected...</em>
+        </div>
+    </div>
+
+    <script>
+        // Global UI Scripts
+        const themeToggle = document.getElementById('theme-toggle'), fullscreenToggle = document.getElementById('fullscreen-toggle');
+        function setTheme(theme) { document.documentElement.setAttribute('data-theme', theme); localStorage.setItem('theme', theme); themeToggle.textContent = theme === 'light' ? '🌙 Dark Mode' : '☀️ Light Mode'; }
+        setTheme(localStorage.getItem('theme') || 'dark');
+        themeToggle.addEventListener('click', () => setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'));
+        fullscreenToggle.addEventListener('click', () => {
+            if (!document.fullscreenElement) { document.documentElement.requestFullscreen(); fullscreenToggle.textContent = "⛶ Exit Full Screen"; }
+            else { document.exitFullscreen(); fullscreenToggle.textContent = "⛶ Full Screen"; }
+        });
+
+        // App Logic
+        const { jsPDF } = window.jspdf;
+        let images = [];
+        const previewArea = document.getElementById('previewArea'), genBtn = document.getElementById('generateButton'), statusMsg = document.getElementById('statusMessage');
+
+        document.getElementById('imageInput').addEventListener('change', e => {
+            if (!e.target.files.length) return;
+            Array.from(e.target.files).forEach(file => {
+                const r = new FileReader();
+                r.onload = ev => { images.push({ id: Date.now()+Math.random(), src: ev.target.result }); updatePreviews(); };
+                r.readAsDataURL(file);
+            });
+            e.target.value = '';
+        });
+
+        document.getElementById('clearButton').addEventListener('click', () => { images = []; updatePreviews(); statusMsg.textContent = ''; });
+
+        function updatePreviews() {
+            previewArea.innerHTML = images.length ? '' : '<em style="color: var(--border-color); width:100%; text-align:center; margin-top:50px;">No images selected...</em>';
+            images.forEach((img, i) => {
+                const div = document.createElement('div'); div.className = 'img-container';
+                div.innerHTML = `<img src="${img.src}" class="img-preview"><div class="img-number">${i+1}</div><div class="img-delete" onclick="removeImg('${img.id}')">×</div>`;
+                previewArea.appendChild(div);
+            });
+            genBtn.disabled = images.length === 0;
+        }
+        window.removeImg = (id) => { images = images.filter(img => img.id != id); updatePreviews(); };
+
+        genBtn.addEventListener('click', () => {
+            if(!images.length) return;
+            statusMsg.textContent = 'Generating...'; statusMsg.style.color = 'var(--accent-blue)';
+            setTimeout(() => {
+                const doc = new jsPDF({ orientation: document.getElementById('orientation').value, format: document.getElementById('pageSize').value });
+                const w = doc.internal.pageSize.getWidth(), h = doc.internal.pageSize.getHeight();
+                images.forEach((img, i) => {
+                    if(i > 0) doc.addPage();
+                    const image = new Image(); image.src = img.src;
+                    const ratio = Math.min((w - 20)/image.width, (h - 20)/image.height);
+                    doc.addImage(img.src, 'JPEG', (w - image.width*ratio)/2, (h - image.height*ratio)/2, image.width*ratio, image.height*ratio);
+                });
+                doc.save(document.getElementById('filename').value || 'document.pdf');
+                statusMsg.textContent = '✅ Saved!'; statusMsg.style.color = '#27ae60';
+            }, 100);
+        });
+        if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+    </script>
+</body>
+</html>
